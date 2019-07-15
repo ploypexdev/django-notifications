@@ -12,6 +12,10 @@ from django.db import models
 from django.db.models.query import QuerySet
 from django.utils import timezone
 from django.utils.six import text_type
+from django.dispatch import receiver
+from django.db.models.signals import post_save
+from django.core.mail import EmailMessage
+
 from jsonfield.fields import JSONField
 from model_utils import Choices
 from notifications import settings as notifications_settings
@@ -310,3 +314,17 @@ def notify_handler(verb, **kwargs):
 
 # connect the signal
 notify.connect(notify_handler, dispatch_uid='notifications.models.notification')
+
+# send email in this signal
+@receiver(post_save, sender=Notification)
+def send_email_notification(sender, instance, created, *args, **kwargs):
+    if created:
+        email = EmailMessage(
+            instance.verb,
+            f'{instance.description} happened {instance.timesince} ago',  # render_to_string
+            'New Notification <notifications@example.com>',
+            [instance.recipient.email],
+            reply_to=['Support <support@example.com']
+        )
+        # email.content_subtype = 'html'
+        email.send()
