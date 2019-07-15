@@ -21,6 +21,7 @@ from model_utils import Choices
 from notifications import settings as notifications_settings
 from notifications.signals import notify
 from notifications.utils import id2slug
+from notifications.tasks import send_notification_email
 
 if StrictVersion(get_version()) >= StrictVersion('1.8.0'):
     from django.contrib.contenttypes.fields import GenericForeignKey  # noqa
@@ -319,12 +320,16 @@ notify.connect(notify_handler, dispatch_uid='notifications.models.notification')
 @receiver(post_save, sender=Notification)
 def send_email_notification(sender, instance, created, *args, **kwargs):
     if created:
-        email = EmailMessage(
-            instance.verb,
-            f'{instance.description} happened {instance.timesince} ago',  # render_to_string
-            'New Notification <notifications@example.com>',
-            [instance.recipient.email],
-            reply_to=['Support <support@example.com']
-        )
-        # email.content_subtype = 'html'
-        email.send()
+        if settings.NOTIFICATIONS_USE_CELERY:
+            send_notification_email.apply_async((instance.verb, instance.description, instance.timesince,
+                instance.recipient.email), queue='notifications')
+        else:
+            email = EmailMessage(
+                instance.verb,
+                f'{instance.description} happened {instance.timesince} ago',  # render_to_string
+                'New Notification <notifications@example.com>',
+                [instance.recipient.email],
+                reply_to=['Support <support@example.com']
+            )
+            # email.content_subtype = 'html'
+            email.send()
